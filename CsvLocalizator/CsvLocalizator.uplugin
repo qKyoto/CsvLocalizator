@@ -33,10 +33,7 @@
 	],
 	"PythonRequirements": [
 		{
-			"Platform": "All",
-			"Requirements": [
-				"polib==1.2.0"
-			]
+			"Platform": "All"
 		}
 	]
 }

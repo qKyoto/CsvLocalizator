@@ -1,4 +1,7 @@
 #include "CsvLocalizator.h"
+#include "Interfaces/IPluginManager.h"
+#include "Styling/SlateStyle.h"
+#include "Styling/SlateStyleRegistry.h"
 #include "Modules/ModuleManager.h"
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
@@ -453,11 +456,31 @@ class FCsvLocalizatorModule final : public IModuleInterface
 public:
     virtual void StartupModule() override
     {
+        StyleSet = MakeShared<FSlateStyleSet>("CsvLocalizatorStyle");
+
+        const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("CsvLocalizator"));
+        if (Plugin.IsValid())
+        {
+            const FString ResourcesDir = Plugin->GetBaseDir() / TEXT("Resources");
+            StyleSet->SetContentRoot(ResourcesDir);
+
+            StyleSet->Set(
+                "CsvLocalizator.TabIcon",
+                new FSlateImageBrush(
+                    StyleSet->RootToContentDir(TEXT("plugin_icon"), TEXT(".png")),
+                    FVector2D(16.0f, 16.0f)
+                )
+            );
+
+            FSlateStyleRegistry::RegisterSlateStyle(*StyleSet);
+        }
+        
         FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
             CsvLocalizator::TabName,
             FOnSpawnTab::CreateRaw(this, &FCsvLocalizatorModule::SpawnPluginTab)
         )
         .SetDisplayName(LOCTEXT("TabTitle", "CSV Localizator"))
+        .SetIcon(FSlateIcon("CsvLocalizatorStyle", "CsvLocalizator.TabIcon"))
         .SetMenuType(ETabSpawnerMenuType::Hidden);
 
         UToolMenus::RegisterStartupCallback(
@@ -467,6 +490,12 @@ public:
 
     virtual void ShutdownModule() override
     {
+        if (StyleSet.IsValid())
+        {
+            FSlateStyleRegistry::UnRegisterSlateStyle(*StyleSet);
+            StyleSet.Reset();
+        }
+        
         UToolMenus::UnRegisterStartupCallback(this);
         UToolMenus::UnregisterOwner(this);
         FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(CsvLocalizator::TabName);
@@ -485,13 +514,16 @@ private:
     void RegisterMenus()
     {
         FToolMenuOwnerScoped OwnerScoped(this);
+
         UToolMenu* Menu = UToolMenus::Get()->ExtendMenu("LevelEditor.MainMenu.Tools");
-        FToolMenuSection& Section = Menu->FindOrAddSection("CsvLocalizator");
+
+        FToolMenuSection& Section = Menu->FindOrAddSection("Tools");
+
         Section.AddMenuEntry(
             "OpenCsvLocalizator",
             LOCTEXT("OpenMenuLabel", "CSV Localizator"),
             LOCTEXT("OpenMenuTooltip", "Open the CSV Localizator tool"),
-            FSlateIcon(),
+            FSlateIcon("CsvLocalizatorStyle", "CsvLocalizator.TabIcon"),
             FUIAction(FExecuteAction::CreateRaw(this, &FCsvLocalizatorModule::OpenPluginWindow))
         );
     }
@@ -500,6 +532,10 @@ private:
     {
         FGlobalTabmanager::Get()->TryInvokeTab(CsvLocalizator::TabName);
     }
+
+private:
+    TSharedPtr<FSlateStyleSet> StyleSet;
+    
 };
 
 IMPLEMENT_MODULE(FCsvLocalizatorModule, CsvLocalizator)
