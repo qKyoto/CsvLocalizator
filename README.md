@@ -43,8 +43,8 @@ If you use a precompiled release for your exact Unreal Engine version, no IDE is
 Download the release ZIP matching your Unreal Engine version from the GitHub Releases page:
 
 ```
-CsvLocalizator-v1.0.0-UE5.6-Win64.zip
-CsvLocalizator-v1.0.0-UE5.7-Win64.zip
+CsvLocalizator-v1.0-UE5.6-Win64.zip
+CsvLocalizator-v1.0-UE5.7-Win64.zip
 ```
 
 Extract it into your project:
