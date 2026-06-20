@@ -1,4 +1,5 @@
 #include "CsvLocalizator.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Interfaces/IPluginManager.h"
 #include "Styling/SlateStyle.h"
 #include "Styling/SlateStyleRegistry.h"
@@ -26,7 +27,8 @@
 
 namespace CsvLocalizator
 {
-static const FName TabName(TEXT("CsvLocalizator"));
+    static const FName TabName(TEXT("CsvLocalizator"));
+    static const FString AllCulturesOption = TEXT("All cultures in one CSV");
 
 static FString PyStringLiteral(const FString& Value)
 {
@@ -73,7 +75,6 @@ public:
         OutputPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("LocalizationCSV"));
         InputCsvPath = OutputPath / TEXT("Game_all.csv");
         NativeCulture = TEXT("en");
-        bExportAllCultures = true;
 
         RefreshTargetsAndCultures();
 
@@ -165,13 +166,28 @@ public:
         ];
     }
 
+    void RefreshNativeCulture()
+    {
+        if (!SelectedTarget.IsValid())
+        {
+            return;
+        }
+
+        const FString ConfigPath = FPaths::ProjectConfigDir() / TEXT("Localization") / (*SelectedTarget + TEXT(".ini"));
+
+        FString FoundNativeCulture;
+        if (GConfig && GConfig->GetString(TEXT("CommonSettings"), TEXT("NativeCulture"), FoundNativeCulture, ConfigPath))
+        {
+            NativeCulture = FoundNativeCulture;
+        }
+    }
+
 private:
     FString LocalizationRoot;
     FString OutputPath;
     FString InputCsvPath;
     FString NativeCulture;
     FString Status;
-    bool bExportAllCultures;
 
     TArray<TSharedPtr<FString>> Targets;
     TArray<TSharedPtr<FString>> Cultures;
@@ -238,20 +254,7 @@ private:
         return SNew(SHorizontalBox)
             + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
             [
-                SNew(STextBlock).Text(LOCTEXT("Mode", "Mode")).MinDesiredWidth(150)
-            ]
-            + SHorizontalBox::Slot().AutoWidth()
-            [
-                SNew(SCheckBox)
-                .IsChecked(this, &SCsvLocalizatorWindow::GetAllCulturesCheckState)
-                .OnCheckStateChanged(this, &SCsvLocalizatorWindow::OnAllCulturesChanged)
-                [
-                    SNew(STextBlock).Text(LOCTEXT("AllCultures", "All cultures in one CSV"))
-                ]
-            ]
-            + SHorizontalBox::Slot().AutoWidth().Padding(16, 0, 8, 0).VAlign(VAlign_Center)
-            [
-                SNew(STextBlock).Text(LOCTEXT("SelectedCulture", "Selected Culture"))
+                SNew(STextBlock).Text(LOCTEXT("SelectedCulture", "Selected Culture")).MinDesiredWidth(150)
             ]
             + SHorizontalBox::Slot().FillWidth(1.0f)
             [
@@ -283,20 +286,25 @@ private:
         }
 
         SelectedTarget = Targets.Num() > 0 ? Targets[0] : nullptr;
+        RefreshNativeCulture();
         RefreshCultures();
     }
 
     void RefreshCultures()
     {
         Cultures.Empty();
+
+        Cultures.Add(MakeShared<FString>(AllCulturesOption));
+
         if (!SelectedTarget.IsValid())
         {
-            SelectedCulture.Reset();
+            SelectedCulture = Cultures[0];
             return;
         }
 
         TArray<FString> Directories;
         IFileManager::Get().FindFiles(Directories, *(LocalizationRoot / *SelectedTarget / TEXT("*")), false, true);
+
         for (const FString& Directory : Directories)
         {
             const FString PoPath = LocalizationRoot / *SelectedTarget / Directory / (*SelectedTarget + TEXT(".po"));
@@ -306,19 +314,7 @@ private:
             }
         }
 
-        SelectedCulture.Reset();
-        for (const TSharedPtr<FString>& Culture : Cultures)
-        {
-            if (Culture.IsValid() && *Culture != NativeCulture)
-            {
-                SelectedCulture = Culture;
-                break;
-            }
-        }
-        if (!SelectedCulture.IsValid() && Cultures.Num() > 0)
-        {
-            SelectedCulture = Cultures[0];
-        }
+        SelectedCulture = Cultures[0];
     }
 
     FText GetLocalizationRootText() const { return FText::FromString(LocalizationRoot); }
@@ -328,18 +324,17 @@ private:
     FText GetStatusText() const { return FText::FromString(Status); }
     FText GetSelectedTargetText() const { return SelectedTarget.IsValid() ? FText::FromString(*SelectedTarget) : LOCTEXT("NoTarget", "No target found"); }
     FText GetSelectedCultureText() const { return SelectedCulture.IsValid() ? FText::FromString(*SelectedCulture) : LOCTEXT("NoCulture", "No culture found"); }
-    ECheckBoxState GetAllCulturesCheckState() const { return bExportAllCultures ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; }
 
     void OnLocalizationRootCommitted(const FText& Text, ETextCommit::Type) { LocalizationRoot = Text.ToString(); RefreshTargetsAndCultures(); }
     void OnOutputPathCommitted(const FText& Text, ETextCommit::Type) { OutputPath = Text.ToString(); }
     void OnInputCsvPathCommitted(const FText& Text, ETextCommit::Type) { InputCsvPath = Text.ToString(); }
     void OnNativeCultureCommitted(const FText& Text, ETextCommit::Type) { NativeCulture = Text.ToString(); RefreshCultures(); }
-    void OnAllCulturesChanged(ECheckBoxState State) { bExportAllCultures = State == ECheckBoxState::Checked; }
     void OnCultureChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type) { SelectedCulture = NewValue; }
 
     void OnTargetChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type)
     {
         SelectedTarget = NewValue;
+        RefreshNativeCulture();
         RefreshCultures();
         if (CultureComboBox.IsValid())
         {
@@ -419,12 +414,14 @@ private:
             return FReply::Handled();
         }
 
+        const bool bAllCulturesSelected = SelectedCulture.IsValid() && *SelectedCulture == AllCulturesOption;
+
         ExecuteToolCommand(TEXT("export_to_csv"), {
             {TEXT("localization_root"), LocalizationRoot},
             {TEXT("target"), *SelectedTarget},
             {TEXT("native_culture"), NativeCulture},
-            {TEXT("mode"), bExportAllCultures ? TEXT("all") : TEXT("selected")},
-            {TEXT("selected_culture"), SelectedCulture.IsValid() ? *SelectedCulture : TEXT("")},
+            {TEXT("mode"), bAllCulturesSelected ? TEXT("all") : TEXT("selected")},
+            {TEXT("selected_culture"), bAllCulturesSelected ? TEXT("") : (SelectedCulture.IsValid() ? *SelectedCulture : TEXT(""))},
             {TEXT("output_path"), OutputPath}
         });
         Status = TEXT("Export command sent. Check Output Log for details.");
