@@ -9,7 +9,6 @@
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SComboBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Layout/SScrollBox.h"
@@ -30,38 +29,38 @@ namespace CsvLocalizator
     static const FName TabName(TEXT("CsvLocalizator"));
     static const FString AllCulturesOption = TEXT("All cultures in one CSV");
 
-static FString PyStringLiteral(const FString& Value)
-{
-    FString Escaped = Value;
-    Escaped.ReplaceInline(TEXT("\\"), TEXT("\\\\"));
-    Escaped.ReplaceInline(TEXT("\""), TEXT("\\\""));
-    Escaped.ReplaceInline(TEXT("\n"), TEXT("\\n"));
-    Escaped.ReplaceInline(TEXT("\r"), TEXT("\\r"));
-    return FString::Printf(TEXT("\"%s\""), *Escaped);
-}
-
-static void ExecuteToolCommand(const FString& FunctionName, const TMap<FString, FString>& Args)
-{
-    FString Command = TEXT("import unreal_po_csv\n");
-    Command += FString::Printf(TEXT("unreal_po_csv.%s("), *FunctionName);
-
-    bool bFirst = true;
-    for (const TPair<FString, FString>& Arg : Args)
+    static FString PyStringLiteral(const FString& Value)
     {
-        if (!bFirst)
-        {
-            Command += TEXT(", ");
-        }
-
-        Command += Arg.Key;
-        Command += TEXT("=");
-        Command += PyStringLiteral(Arg.Value);
-        bFirst = false;
+        FString Escaped = Value;
+        Escaped.ReplaceInline(TEXT("\\"), TEXT("\\\\"));
+        Escaped.ReplaceInline(TEXT("\""), TEXT("\\\""));
+        Escaped.ReplaceInline(TEXT("\n"), TEXT("\\n"));
+        Escaped.ReplaceInline(TEXT("\r"), TEXT("\\r"));
+        return FString::Printf(TEXT("\"%s\""), *Escaped);
     }
 
-    Command += TEXT(")");
-    IPythonScriptPlugin::Get()->ExecPythonCommand(*Command);
-}
+    static void ExecuteToolCommand(const FString& FunctionName, const TMap<FString, FString>& Args)
+    {
+        FString Command = TEXT("import unreal_po_csv\n");
+        Command += FString::Printf(TEXT("unreal_po_csv.%s("), *FunctionName);
+
+        bool bFirst = true;
+        for (const TPair<FString, FString>& Arg : Args)
+        {
+            if (!bFirst)
+            {
+                Command += TEXT(", ");
+            }
+
+            Command += Arg.Key;
+            Command += TEXT("=");
+            Command += PyStringLiteral(Arg.Value);
+            bFirst = false;
+        }
+
+        Command += TEXT(")");
+        IPythonScriptPlugin::Get()->ExecPythonCommand(*Command);
+    }
 
 class SCsvLocalizatorWindow : public SCompoundWidget
 {
@@ -201,6 +200,19 @@ private:
     TSharedPtr<SComboBox<TSharedPtr<FString>>> TargetComboBox;
     TSharedPtr<SComboBox<TSharedPtr<FString>>> CultureComboBox;
 
+    TSharedPtr<FString> FindOptionByValue(const TArray<TSharedPtr<FString>>& Options, const FString& Value) const
+    {
+        for (const TSharedPtr<FString>& Option : Options)
+        {
+            if (Option.IsValid() && *Option == Value)
+            {
+                return Option;
+            }
+        }
+
+        return nullptr;
+    }
+    
     TSharedRef<SWidget> MakePathRow(const FText& Label, TSharedRef<SWidget> Input, FOnClicked BrowseAction)
     {
         return SNew(SHorizontalBox)
@@ -276,16 +288,25 @@ private:
 
     void RefreshTargetsAndCultures()
     {
+        const FString PreviousTarget = SelectedTarget.IsValid() ? *SelectedTarget : TEXT("");
+
         Targets.Empty();
 
         TArray<FString> Directories;
         IFileManager::Get().FindFiles(Directories, *(LocalizationRoot / TEXT("*")), false, true);
+
         for (const FString& Directory : Directories)
         {
             Targets.Add(MakeShared<FString>(Directory));
         }
 
-        SelectedTarget = Targets.Num() > 0 ? Targets[0] : nullptr;
+        SelectedTarget = FindOptionByValue(Targets, PreviousTarget);
+
+        if (!SelectedTarget.IsValid() && Targets.Num() > 0)
+        {
+            SelectedTarget = Targets[0];
+        }
+
         RefreshNativeCulture();
         RefreshCultures();
     }
@@ -329,16 +350,33 @@ private:
     void OnOutputPathCommitted(const FText& Text, ETextCommit::Type) { OutputPath = Text.ToString(); }
     void OnInputCsvPathCommitted(const FText& Text, ETextCommit::Type) { InputCsvPath = Text.ToString(); }
     void OnNativeCultureCommitted(const FText& Text, ETextCommit::Type) { NativeCulture = Text.ToString(); RefreshCultures(); }
-    void OnCultureChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type) { SelectedCulture = NewValue; }
+
+    void OnCultureChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type)
+    {
+        if (!NewValue.IsValid())
+        {
+            return;
+        }
+
+        SelectedCulture = NewValue;
+    }
 
     void OnTargetChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type)
     {
+        if (!NewValue.IsValid())
+        {
+            return;
+        }
+
         SelectedTarget = NewValue;
+
         RefreshNativeCulture();
         RefreshCultures();
+
         if (CultureComboBox.IsValid())
         {
             CultureComboBox->RefreshOptions();
+            CultureComboBox->SetSelectedItem(SelectedCulture);
         }
     }
 
@@ -397,10 +435,12 @@ private:
         if (TargetComboBox.IsValid())
         {
             TargetComboBox->RefreshOptions();
+            TargetComboBox->SetSelectedItem(SelectedTarget);
         }
         if (CultureComboBox.IsValid())
         {
             CultureComboBox->RefreshOptions();
+            CultureComboBox->SetSelectedItem(SelectedCulture);
         }
         Status = FString::Printf(TEXT("Found %d target(s), %d culture(s)."), Targets.Num(), Cultures.Num());
         return FReply::Handled();
