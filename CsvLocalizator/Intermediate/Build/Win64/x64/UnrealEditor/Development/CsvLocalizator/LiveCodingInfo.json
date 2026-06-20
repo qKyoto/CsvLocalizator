@@ -1,0 +1,9 @@
+{
+	"RemapUnityFiles": 
+	{
+		"Module.CsvLocalizator.cpp.obj": [
+			"PerModuleInline.gen.cpp.obj",
+			"CsvLocalizator.cpp.obj"
+		]
+	}
+}
